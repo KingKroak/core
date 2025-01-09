@@ -1,13 +1,22 @@
 import os
 
+import pandas as pd
+
 from utils.gmail import GmailService
 
 if __name__ == '__main__':
     print(os.getcwd())
-    gmail_service = GmailService(f'{os.getcwd()}/utils/token.json', f'{os.getcwd()}/utils/credentials.json')
+
+    df = pd.DataFrame()
+
+    text = f'<b>hello world</b>'
+    text += df.to_html()
+
+    gmail_service = GmailService(f'../utils/token.json', f'../utils/credentials.json')
     gmail_service.send_email(
         'AtraxaBot',
         'atraxa.investments@gmail.com',
         'Hello World!',
-        'This is a test of the Gmail service component',
+        text,
+        message_format='html'
     )
