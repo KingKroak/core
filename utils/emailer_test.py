@@ -1,6 +1,8 @@
-from utils.gmail import GmailService
+from utils import GmailService
+import os
 
 if __name__ == '__main__':
+    print(os.getcwd())
     gmail_service = GmailService('token.json', 'credentials.json')
     gmail_service.send_email(
         'AtraxaBot',
