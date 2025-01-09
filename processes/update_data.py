@@ -3,7 +3,7 @@ import os
 import pandas as pd
 import yfinance as yf
 
-DATA_DIR = "data/yahoo"
+DATA_DIR = "../data/yahoo"
 
 
 def load_yahoo_data(tickers):

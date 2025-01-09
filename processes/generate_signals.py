@@ -3,7 +3,7 @@ import os
 import numpy as np
 import pandas as pd
 
-DATA_PATH = 'data/yahoo'
+DATA_PATH = '../data/yahoo'
 
 CONTRACT_MULTIPLIERS = {
     'ZN=F': 1000,
@@ -81,6 +81,8 @@ def run():
     print(target_equity)
     print('ZN target')
     print(target_bond)
+
+
 
 if __name__ == '__main__':
     run()
