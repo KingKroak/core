@@ -4,7 +4,7 @@ from utils.gmail import GmailService
 
 if __name__ == '__main__':
     print(os.getcwd())
-    gmail_service = GmailService('token.json', 'credentials.json')
+    gmail_service = GmailService('../utils/token.json', '../utils/credentials.json')
     gmail_service.send_email(
         'AtraxaBot',
         'atraxa.investments@gmail.com',
