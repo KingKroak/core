@@ -1,4 +1,6 @@
 import os
+import pprint
+
 import feedparser
 
 import numpy as np
@@ -180,4 +182,5 @@ if __name__ == '__main__':
         'risk_scaler': 10000,
     }
 
+    pprint.pp(params)
     run(params)
