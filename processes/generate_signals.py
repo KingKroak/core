@@ -149,8 +149,8 @@ def run(params: dict):
     aud_usd_rate = last_updated_values['AUDUSD=X']
 
     summary_df = [
-        ('ES', tgt_holdings_es.values[-1], equity_scores, vols['ES=F'].values[-1]),
-        ('ZN', tgt_holdings_zn.values[-1], bond_scores, vols['ZN=F'].values[-1]),
+        ('ES', tgt_holdings_es.values[-1], equity_scores.values[-1], vols['ES=F'].values[-1]),
+        ('ZN', tgt_holdings_zn.values[-1], bond_scores.values[-1], vols['ZN=F'].values[-1]),
     ]
 
     summary2_df = [
