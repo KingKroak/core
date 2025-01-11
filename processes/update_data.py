@@ -93,5 +93,5 @@ def load_yahoo_data(tickers):
 
 
 if __name__ == "__main__":
-    tickers = ["^VIX", "CL=F", "ES=F", "ZN=F"]
+    tickers = ["^VIX", "CL=F", "ES=F", "ZN=F", 'AUDUSD=X']
     load_yahoo_data(tickers)

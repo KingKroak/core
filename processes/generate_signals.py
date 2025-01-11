@@ -63,34 +63,41 @@ def get_news_html():
 
 def run(params: dict):
 
-    syms = ['^VIX', 'CL=F', 'ES=F', 'ZN=F']
-    prices = load_prices(syms)
-
-    z_score = {}
-    usd_vols = {}
-    last_updated_time = {}
+    syms = ['^VIX', 'CL=F', 'ES=F', 'ZN=F', 'AUDUSD=X']
+    raw_prices = load_prices(syms)
 
     detail_df = []
 
+    last_updated_times = {}
+    last_updated_values = {}
+
+    prices = pd.DataFrame()
+
     for sym in syms:
-        px = prices[sym]
+        ts = raw_prices[sym]
+        ts.name = sym
+        last_updated_times[sym] = ts.index.values[-1]
+        last_updated_values[sym] = ts.values[-1]
+        prices = prices.join(ts, how='outer')
 
-        daily_px = px.resample('B').last()
-        daily_vol = daily_px.diff().ewm(halflife=params['vol_hl']).std()
-        ann_vol = np.log(daily_px).diff().ewm(halflife=params['vol_hl']).std() * np.sqrt(252) * 100.0
+    prices = prices.ffill()
+    daily_px = prices.resample('B').last()
+    daily_vol = daily_px.diff().ewm(halflife=params['vol_hl']).std()
+    ann_pct_vol = np.log(daily_px).diff().ewm(halflife=params['vol_hl']).std() * np.sqrt(252) * 100.0
 
-        signal_raw = px - px.ewm(halflife=pd.Timedelta(days=params['mean_hl']), times=px.index).mean()
-        signal_vol = signal_raw.resample('D').last().ewm(halflife=params['signal_vol_hl']).std()
-        signal_vol = signal_vol.asof(signal_raw.index)
-        signal = (signal_raw / signal_vol).clip(-2, 2)
+    price_change = prices - prices.ewm(halflife=pd.Timedelta(days=params['mean_hl']), times=prices.index).mean()
+    price_change_vol = price_change.resample('B').last().ewm(halflife=params['signal_vol_hl']).std()
+    price_change_vol = price_change_vol.asof(price_change.index)
+    z_score = (price_change / price_change_vol).clip(-2, 2)
 
+    for sym in syms:
         record = (
             sym,
-            px.index.values[-1],
-            px.values[-1],
-            signal.values[-1],
-            ann_vol.values[-1],
-            daily_vol.values[-1],
+            last_updated_times[sym],
+            last_updated_values[sym],
+            z_score[sym].values[-1],
+            ann_pct_vol[sym].values[-1],
+            daily_vol[sym].values[-1],
         )
 
         detail_df.append(record)
@@ -103,29 +110,53 @@ def run(params: dict):
         print(f'ann_vol: {record[4]}')
         print(f'ret_vol: {record[5]}')
 
-        z_score[sym] = signal.values[-1]
-        usd_vols[sym] = daily_vol.values[-1] * CONTRACT_MULTIPLIERS.get(sym, 1)
-        last_updated_time[sym] = signal.index.values[-1]
-
     # generate signal targets
     # declining vol and bond yields is good for equities
-    equity_score = 1 + params['eq_score_wt'] * (-z_score['^VIX'] + z_score['ZN=F']) / 2
+    equity_scores = 1 + params['eq_score_wt'] * (-z_score['^VIX'] + z_score['ZN=F']) / 2
     # declining inflation (i.e. oil) is good for bonds
-    bond_score = 1 + params['fi_score_wt'] * (-z_score['CL=F'])
+    bond_scores = 1 + params['fi_score_wt'] * (-z_score['CL=F'])
 
-    risk_scaler = params['risk_scaler']
-    target_equity = equity_score / usd_vols['ES=F'] * risk_scaler
-    target_bond = bond_score / usd_vols['ZN=F'] * risk_scaler
+    risk_scaler = 1 / params['risk_scaler']
+    vols = daily_vol.asof(equity_scores.index)
+    tgt_holdings_es = equity_scores / (vols['ES=F'] * risk_scaler * CONTRACT_MULTIPLIERS.get('ES=F'))
+    tgt_holdings_zn = bond_scores / (vols['ZN=F'] * risk_scaler * CONTRACT_MULTIPLIERS.get('ZN=F'))
+
+    # run backtest to determine the expected std. dev.
+
+    returns = 0
+    returns += prices['ZN=F'].diff().shift(-1) * CONTRACT_MULTIPLIERS.get('ZN=F') * tgt_holdings_zn
+    returns += prices['ES=F'].diff().shift(-1) * CONTRACT_MULTIPLIERS.get('ES=F') * tgt_holdings_es
+
+    daily_rets = returns.resample('B').sum()
+    daily_portfolio_vols = daily_rets.ewm(halflife=90).std()
+
+    print()
+    print('Daily Portfolio Return Std (USD)')
+    print(daily_rets.std())
+    print('Daily Portfolio Return Mean (USD)')
+    print(daily_rets.mean())
+    print('IR')
+    print(daily_rets.mean() / daily_rets.std() * 16)
+    print('Daily Portfolio Vol (USD)')
+    print(daily_portfolio_vols.values[-1])
 
     print()
     print('ES target')
-    print(target_equity)
+    print(tgt_holdings_es.values[-1])
     print('ZN target')
-    print(target_bond)
+    print(tgt_holdings_zn.values[-1])
+
+    aud_usd_rate = last_updated_values['AUDUSD=X']
 
     summary_df = [
-        ('ES', target_equity, equity_score, usd_vols['ES=F']),
-        ('ZN', target_bond, bond_score, usd_vols['ZN=F']),
+        ('ES', tgt_holdings_es.values[-1], equity_scores, vols['ES=F'].values[-1]),
+        ('ZN', tgt_holdings_zn.values[-1], bond_scores, vols['ZN=F'].values[-1]),
+    ]
+
+    summary2_df = [
+        ('Expected Daily Risk (USD)', daily_portfolio_vols.values[-1]),
+        ('AUD/USD FX Rate', aud_usd_rate),
+        ('Risk Scaler', params['risk_scaler'])
     ]
 
     # create reports
@@ -133,7 +164,8 @@ def run(params: dict):
         detail_df, index='sym', columns=['sym', 'last_timestamp', 'last_close', 'z_score', 'ann_vol', 'daily_vol'])
     summary_df = pd.DataFrame.from_records(
         summary_df, index='sym', columns=['sym', 'tgt_pos', 'score', 'usd_vol'])
-
+    summary2_df = pd.DataFrame.from_records(
+        summary2_df, index='sym', columns=['sym', 'value'])
     date_str = pd.Timestamp.utcnow().strftime('%Y.%m.%d')
 
     quote_of_the_day = get_quote_of_the_day()
@@ -149,6 +181,7 @@ def run(params: dict):
         {quote_of_the_day}
         <h4>Summary</h4>
         {summary_df.to_html()}
+        {summary2_df.to_html()}
         <h4>Details</h4>
         {detail_df.to_html()}
         <h4>Latest Headlines</h4>
@@ -179,7 +212,7 @@ if __name__ == '__main__':
         'signal_vol_hl': 180,
         'eq_score_wt': 0.5,
         'fi_score_wt': 0.5,
-        'risk_scaler': 10000,
+        'risk_scaler': 3000,
     }
 
     pprint.pp(params)
